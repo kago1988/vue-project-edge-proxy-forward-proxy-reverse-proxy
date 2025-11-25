@@ -1,0 +1,40 @@
+<form class="search-form">
+  <input
+    type="text"
+    class="search"
+    placeholder="Disease or Code"
+    autocomplete="off"
+    [(ngModel)]="searchTerm"
+    name="searchTerm"
+    (input)="search()"
+  />
+
+  <ul class="suggestions">
+    <li *ngFor="let match of matches">
+      <span class="name">
+        <span [innerHTML]="match.highlightedName"></span>,
+        <span>
+          {{ match.code }}
+        </span>
+      </span>
+
+      <span class="details">
+        {{ match.abbr }}
+      </span>
+    </li>
+
+  </ul>
+</form>
+
+<p class="info">
+  Using JavaScript (TypeScript/Angular), replicate the
+  <a
+    href="https://medicalvalues.de/wp-content/uploads/2021/01/js_challenge.mp4"
+    target="_blank"
+  >
+    functionality found here
+  </a>.
+  <br />
+  The solution does not have to be perfect. Most important is to see how you
+  approach such tasks.
+</p>

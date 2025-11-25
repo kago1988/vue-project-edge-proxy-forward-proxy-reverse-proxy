@@ -1,0 +1,15 @@
+version: "3.9"
+
+services:
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: mv-frontend
+    ports:
+      - "4200:4200"
+    environment:
+      - NODE_ENV=development
+    # For live code editing, you could later add:
+    # volumes:
+    #   - ../front-end:/usr/src/app
