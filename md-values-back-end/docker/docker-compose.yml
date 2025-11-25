@@ -9,5 +9,7 @@ services:
     ports:
       - "3000:3000"  # direct NestJS (optional)
       - "8080:8080"  # Nginx reverse proxy inside container
+    env_file:
+      - ../back-end/.env   # same file as local
     environment:
       - NODE_ENV=production

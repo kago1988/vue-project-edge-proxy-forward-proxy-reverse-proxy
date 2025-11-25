@@ -3,8 +3,14 @@ import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 
-const DISEASES_URL =
-  'https://raw.githubusercontent.com/NCI-CBIIT/FHH/master/data/diseases.json';
+let DISEASES_URL: string;
+
+if (typeof process.env.DISEASES_URL === 'string' && process.env.DISEASES_URL.trim() !== '') {
+  DISEASES_URL = process.env.DISEASES_URL;
+} else {
+  DISEASES_URL =
+    'https://raw.githubusercontent.com/NCI-CBIIT/FHH/master/data/diseases.json';
+}
 
 export type Disease = {
   name: string;
