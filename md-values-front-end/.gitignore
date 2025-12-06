@@ -55,3 +55,4 @@ Thumbs.db
 # Project-specific
 # =============================
 forward-proxy/logs/
+edge-proxy/logs/

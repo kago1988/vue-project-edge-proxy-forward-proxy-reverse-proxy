@@ -10,7 +10,7 @@ BACKEND_PROXY_DIR="md-values-back-end/reverse-proxy"
 
 FRONTEND_DIR="md-values-front-end/front-end"
 FRONTEND_PROXY_DIR="md-values-front-end/forward-proxy"
-FRONTEND_EDGE_DIR="md-values-front-end/reverse-proxy"  # HTTPS edge proxy for mdvalues.test
+FRONTEND_EDGE_DIR="md-values-front-end/edge-proxy"  # HTTPS edge proxy for mdvalues.test
 
 BACKEND_PORT=3000
 REVERSE_PROXY_PORT=8080
