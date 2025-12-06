@@ -1,0 +1,81 @@
+# =========================
+# Back-end: compiled output
+# =========================
+back-end/dist/
+back-end/node_modules/
+back-end/build/
+
+# ==========
+# Back-end: Logs
+# ==========
+back-end/logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# ==========
+# OS files
+# ==========
+.DS_Store
+
+# =================
+# Back-end: Tests
+# =================
+back-end/coverage/
+back-end/.nyc_output/
+
+# =========================
+# Back-end: IDEs and editors
+# =========================
+back-end/.idea/
+back-end/.project
+back-end/.classpath
+back-end/.c9/
+back-end/*.launch
+back-end/.settings/
+back-end/*.sublime-workspace
+
+# =================
+# Back-end: VSCode
+# =================
+back-end/.vscode/*
+!back-end/.vscode/settings.json
+!back-end/.vscode/tasks.json
+!back-end/.vscode/launch.json
+!back-end/.vscode/extensions.json
+
+# ======================================
+# Back-end: dotenv environment variables
+# ======================================
+back-end/.env
+back-end/.env.development.local
+back-end/.env.test.local
+back-end/.env.production.local
+back-end/.env.local
+
+# ====================
+# Back-end: temp dirs
+# ====================
+back-end/.temp
+back-end/.tmp
+
+# =====================
+# Back-end: Runtime data
+# =====================
+back-end/pids
+back-end/*.pid
+back-end/*.seed
+back-end/*.pid.lock
+
+# =======================================
+# Back-end: Diagnostic reports (Node.js)
+# =======================================
+back-end/report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# ===================
+# Reverse proxy logs
+# ===================
+reverse-proxy/logs/
