@@ -60,6 +60,12 @@
         },
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
+          "options": {
+            "browserTarget": "MedicalvaluesFrontEnd:build",
+            "proxyConfig": "proxy.conf.json",
+            "host": "127.0.0.1",
+            "allowedHosts": ["mdvalues.test"]
+          },
           "configurations": {
             "production": {
               "buildTarget": "medicalvalues-front-end:build:production"

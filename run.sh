@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # -------------------------------------------
 # CONFIG
@@ -6,13 +7,25 @@
 
 BACKEND_DIR="md-values-back-end/back-end"
 BACKEND_PROXY_DIR="md-values-back-end/reverse-proxy"
+
 FRONTEND_DIR="md-values-front-end/front-end"
 FRONTEND_PROXY_DIR="md-values-front-end/forward-proxy"
+FRONTEND_EDGE_DIR="md-values-front-end/reverse-proxy"  # HTTPS edge proxy for mdvalues.test
 
 BACKEND_PORT=3000
 REVERSE_PROXY_PORT=8080
 FORWARD_PROXY_PORT=3128
 FRONTEND_PORT=4200
+FRONTEND_EDGE_PORT=443   # nginx-mdvalues.conf listens here (mdvalues.test)
+
+BACKEND_PID=""
+BACKEND_PROXY_PID=""
+BACKEND_PROXY_LOG_PID=""
+FRONTEND_PID=""
+FRONTEND_PROXY_PID=""
+FRONTEND_PROXY_LOG_PID=""
+FRONTEND_EDGE_PID=""
+FRONTEND_EDGE_LOG_PID=""
 
 # -------------------------------------------
 # FUNCTIONS
@@ -21,9 +34,10 @@ FRONTEND_PORT=4200
 kill_port() {
   local PORT=$1
   echo "Checking for existing processes on port $PORT..."
+  local PIDS
   PIDS=$(lsof -t -i:"$PORT" 2>/dev/null || echo "")
 
-  if [ -n "$PIDS" ]; then
+  if [[ -n "$PIDS" ]]; then
     echo "Killing processes on port $PORT: $PIDS"
     kill -9 $PIDS 2>/dev/null || true
   else
@@ -33,29 +47,45 @@ kill_port() {
 
 ctrl_c() {
   echo ""
-  echo "Stopping backend, proxies & frontend..."
-  kill "$BACKEND_PID" "$BACKEND_PROXY_PID" "$FRONTEND_PROXY_PID" \
-       "$BACKEND_PROXY_LOG_PID" "$FRONTEND_PROXY_LOG_PID" "$FRONTEND_PID" \
-       2>/dev/null || true
+  echo "Stopping backend, proxies, edge & frontend..."
+  set +e
+
+  [[ -n "$FRONTEND_EDGE_LOG_PID" ]]    && kill "$FRONTEND_EDGE_LOG_PID" 2>/dev/null || true
+  [[ -n "$FRONTEND_PROXY_LOG_PID" ]]   && kill "$FRONTEND_PROXY_LOG_PID" 2>/dev/null || true
+  [[ -n "$BACKEND_PROXY_LOG_PID" ]]    && kill "$BACKEND_PROXY_LOG_PID" 2>/dev/null || true
+
+  [[ -n "$FRONTEND_EDGE_PID" ]]        && sudo kill "$FRONTEND_EDGE_PID" 2>/dev/null || true
+  [[ -n "$FRONTEND_PROXY_PID" ]]       && kill "$FRONTEND_PROXY_PID" 2>/dev/null || true
+  [[ -n "$BACKEND_PROXY_PID" ]]        && kill "$BACKEND_PROXY_PID" 2>/dev/null || true
+
+  [[ -n "$FRONTEND_PID" ]]             && kill "$FRONTEND_PID" 2>/dev/null || true
+  [[ -n "$BACKEND_PID" ]]              && kill "$BACKEND_PID" 2>/dev/null || true
+
   echo "Shutdown complete."
   exit 0
 }
 
 wait_for_frontend() {
-  echo "Waiting for Angular at http://localhost:${FRONTEND_PORT} ..."
+  echo "Waiting for Angular dev server at http://127.0.0.1:${FRONTEND_PORT} ..."
 
   while true; do
+    # If Angular died, bail out
     if ! kill -0 "$FRONTEND_PID" 2>/dev/null; then
       echo "Angular process exited unexpectedly."
       return
     fi
 
-    if curl -sSf "http://localhost:${FRONTEND_PORT}" >/dev/null 2>&1; then
+    if curl -sSf "http://127.0.0.1:${FRONTEND_PORT}" >/dev/null 2>&1; then
       echo "Angular is running."
 
+      # Open the browser against the HTTPS edge URL on 443
       if command -v open >/dev/null 2>&1; then
-        echo "Opening browser at http://localhost:${FRONTEND_PORT}"
-        open "http://localhost:${FRONTEND_PORT}"
+        echo "Opening browser at https://mdvalues.test"
+        open "https://mdvalues.test"
+      elif command -v xdg-open >/dev/null 2>&1; then
+        xdg-open "https://mdvalues.test" >/dev/null 2>&1 || true
+      else
+        echo "Please open https://mdvalues.test manually in your browser."
       fi
       return
     fi
@@ -70,10 +100,15 @@ wait_for_frontend() {
 
 echo "=== MedicalValues Dev Runner ==="
 
+# Prime sudo so the 443 edge proxy can start in the background
+echo "→ Priming sudo (for Nginx on port 443)..."
+sudo -v
+
 kill_port "$BACKEND_PORT"
 kill_port "$REVERSE_PROXY_PORT"
 kill_port "$FORWARD_PROXY_PORT"
 kill_port "$FRONTEND_PORT"
+kill_port "$FRONTEND_EDGE_PORT"
 
 echo ""
 
@@ -84,6 +119,7 @@ echo ""
   npm run start:dev 2>&1 | sed -e "s/^/[BACKEND] /"
 ) &
 BACKEND_PID=$!
+echo "BACKEND_PID = $BACKEND_PID"
 
 # Start Backend Reverse Proxy (Nginx on 8080)
 (
@@ -91,15 +127,15 @@ BACKEND_PID=$!
   echo "[BACKEND_PROXY] Preparing Nginx reverse proxy..."
   mkdir -p logs
 
-  # Test config first
   nginx -p "$(pwd)/" -c nginx.conf -t 2>&1 | sed -e "s/^/[BACKEND_PROXY_TEST] /"
 
   echo "[BACKEND_PROXY] Starting Nginx reverse proxy (daemon off)..."
   nginx -p "$(pwd)/" -c nginx.conf -g 'daemon off;' 2>&1 | sed -e "s/^/[BACKEND_PROXY] /"
 ) &
 BACKEND_PROXY_PID=$!
+echo "BACKEND_PROXY_PID = $BACKEND_PROXY_PID"
 
-# Live stream logs for reverse proxy
+# Live stream logs for backend reverse proxy
 (
   cd "$BACKEND_PROXY_DIR" || exit
   mkdir -p logs
@@ -107,14 +143,17 @@ BACKEND_PROXY_PID=$!
   tail -F logs/error.log logs/access.log 2>&1 | sed -e "s/^/[BACKEND_PROXY_LOG] /"
 ) &
 BACKEND_PROXY_LOG_PID=$!
+echo "BACKEND_PROXY_LOG_PID = $BACKEND_PROXY_LOG_PID"
 
-# Start Frontend (Angular)
+# Start Frontend (Angular) on 127.0.0.1:4200
 (
   cd "$FRONTEND_DIR" || exit
   echo "[FRONTEND] Starting Angular..."
-  ng serve --port "$FRONTEND_PORT" --proxy-config proxy.conf.json 2>&1 | sed -e "s/^/[FRONTEND] /"
+  ng serve --host 127.0.0.1 --port "$FRONTEND_PORT" --proxy-config proxy.conf.json \
+    2>&1 | sed -e "s/^/[FRONTEND] /"
 ) &
 FRONTEND_PID=$!
+echo "FRONTEND_PID = $FRONTEND_PID"
 
 # Start Frontend Forward Proxy (Nginx on 3128)
 (
@@ -122,15 +161,15 @@ FRONTEND_PID=$!
   echo "[FRONTEND_PROXY] Preparing Nginx forward proxy..."
   mkdir -p logs
 
-  # Test config first
   nginx -p "$(pwd)/" -c nginx.conf -t 2>&1 | sed -e "s/^/[FRONTEND_PROXY_TEST] /"
 
   echo "[FRONTEND_PROXY] Starting Nginx forward proxy (daemon off)..."
   nginx -p "$(pwd)/" -c nginx.conf -g 'daemon off;' 2>&1 | sed -e "s/^/[FRONTEND_PROXY] /"
 ) &
 FRONTEND_PROXY_PID=$!
+echo "FRONTEND_PROXY_PID = $FRONTEND_PROXY_PID"
 
-# Live stream logs for forward proxy
+# Live stream logs for frontend forward proxy
 (
   cd "$FRONTEND_PROXY_DIR" || exit
   mkdir -p logs
@@ -138,20 +177,48 @@ FRONTEND_PROXY_PID=$!
   tail -F logs/error.log logs/access.log 2>&1 | sed -e "s/^/[FRONTEND_PROXY_LOG] /"
 ) &
 FRONTEND_PROXY_LOG_PID=$!
+echo "FRONTEND_PROXY_LOG_PID = $FRONTEND_PROXY_LOG_PID"
+
+# Start Frontend Edge Reverse Proxy (HTTPS mdvalues.test → Angular 4200) on 443 via sudo
+(
+  cd "$FRONTEND_EDGE_DIR" || exit
+  echo "[FRONTEND_EDGE] Preparing Nginx edge reverse proxy (mdvalues.test)..."
+  mkdir -p logs
+
+  # Test mdvalues config as normal user (no root needed for -t)
+  nginx -p "$(pwd)/" -c nginx-mdvalues.conf -t 2>&1 | sed -e "s/^/[FRONTEND_EDGE_TEST] /"
+
+  echo "[FRONTEND_EDGE] Starting Nginx edge reverse proxy on 443 (requires sudo)..."
+  sudo nginx -p "$(pwd)/" -c nginx-mdvalues.conf -g 'daemon off;' 2>&1 | sed -e "s/^/[FRONTEND_EDGE] /"
+) &
+FRONTEND_EDGE_PID=$!
+echo "FRONTEND_EDGE_PID = $FRONTEND_EDGE_PID"
+
+# Live stream logs for frontend edge reverse proxy
+(
+  cd "$FRONTEND_EDGE_DIR" || exit
+  mkdir -p logs
+  touch logs/error.log logs/access.log
+  tail -F logs/error.log logs/access.log 2>&1 | sed -e "s/^/[FRONTEND_EDGE_LOG] /"
+) &
+FRONTEND_EDGE_LOG_PID=$!
+echo "FRONTEND_EDGE_LOG_PID = $FRONTEND_EDGE_LOG_PID"
 
 echo ""
-echo "Backend PID:             $BACKEND_PID"
-echo "Backend Proxy PID:       $BACKEND_PROXY_PID"
-echo "Backend Proxy Log PID:   $BACKEND_PROXY_LOG_PID"
-echo "Frontend Proxy PID:      $FRONTEND_PROXY_PID"
-echo "Frontend Proxy Log PID:  $FRONTEND_PROXY_LOG_PID"
-echo "Frontend PID:            $FRONTEND_PID"
+echo "Backend PID:               $BACKEND_PID"
+echo "Backend Proxy PID:         $BACKEND_PROXY_PID"
+echo "Backend Proxy Log PID:     $BACKEND_PROXY_LOG_PID"
+echo "Frontend Proxy PID:        $FRONTEND_PROXY_PID"
+echo "Frontend Proxy Log PID:    $FRONTEND_PROXY_LOG_PID"
+echo "Frontend Edge PID:         $FRONTEND_EDGE_PID"
+echo "Frontend Edge Log PID:     $FRONTEND_EDGE_LOG_PID"
+echo "Frontend PID:              $FRONTEND_PID"
 echo ""
 
 # Trap CTRL-C
 trap ctrl_c INT
 
-# Wait for frontend to become available, then open browser
+# Wait for frontend, then open https://mdvalues.test
 wait_for_frontend &
 
 echo "Press CTRL+C to stop all servers."
