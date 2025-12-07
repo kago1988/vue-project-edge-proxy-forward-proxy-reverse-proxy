@@ -20,7 +20,7 @@
 │   │   ├── docker-compose.yml
 │   │   ├── Dockerfile
 │   │   └── start-backend.sh
-│   └── reverse-proxy
+│   └── reverse-proxy           // proxy, in front of the middleware server 
 │       ├── logs
 │       ├── nginx-docker.conf
 │       └── nginx.conf
@@ -29,21 +29,26 @@
 │   │   ├── docker-compose.yml
 │   │   ├── Dockerfile
 │   │   └── start-frontend.sh
-│   ├── forward-proxy
+│   ├── edge-proxy              // definable browser url (not localhost:4200)
+│   │   ├── logs
+│   │   ├── nginx-mdvalues.conf
+│   │   └── ssl
+│   ├── forward-proxy           // proxy, where the Front-End sends api calls 
 │   │   ├── logs
 │   │   ├── nginx-docker.conf
 │   │   └── nginx.conf
 │   └── front-end
-│       ├── angular.json
+│       ├── angular.json        // mod 
 │       ├── node_modules
 │       ├── package-lock.json
 │       ├── package.json
-│       ├── proxy.conf.json
+│       ├── proxy.conf.json     // mod 
 │       ├── README.md
 │       ├── src
 │       ├── tsconfig.app.json
 │       ├── tsconfig.json
 │       └── tsconfig.spec.json
+├── README.md
 ├── run.sh
 └── start-docker.sh
 ```
