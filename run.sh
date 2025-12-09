@@ -26,6 +26,7 @@ FRONTEND_PROXY_PID=""
 FRONTEND_PROXY_LOG_PID=""
 FRONTEND_EDGE_PID=""
 FRONTEND_EDGE_LOG_PID=""
+FRONTEND_BUILD_DIR=""
 
 # -------------------------------------------
 # FUNCTIONS
@@ -66,19 +67,17 @@ ctrl_c() {
 }
 
 wait_for_frontend() {
-  echo "Waiting for Angular dev server at http://127.0.0.1:${FRONTEND_PORT} ..."
+  echo "Waiting for frontend at http://127.0.0.1:${FRONTEND_PORT} ..."
 
   while true; do
-    # If Angular died, bail out
-    if ! kill -0 "$FRONTEND_PID" 2>/dev/null; then
-      echo "Angular process exited unexpectedly."
+    if [[ -n "$FRONTEND_PID" ]] && ! kill -0 "$FRONTEND_PID" 2>/dev/null; then
+      echo "Frontend process exited unexpectedly."
       return
     fi
 
     if curl -sSf "http://127.0.0.1:${FRONTEND_PORT}" >/dev/null 2>&1; then
-      echo "Angular is running."
+      echo "Frontend is responding."
 
-      # Open the browser against the HTTPS edge URL on 443
       if command -v open >/dev/null 2>&1; then
         echo "Opening browser at https://mdvalues.test"
         open "https://mdvalues.test"
@@ -98,9 +97,8 @@ wait_for_frontend() {
 # MAIN
 # -------------------------------------------
 
-echo "=== MedicalValues Dev Runner ==="
+echo "=== MedicalValues Dev Runner (build + static frontend) ==="
 
-# Prime sudo so the 443 edge proxy can start in the background
 echo "→ Priming sudo (for Nginx on port 443)..."
 sudo -v
 
@@ -112,7 +110,32 @@ kill_port "$FRONTEND_EDGE_PORT"
 
 echo ""
 
-# Start Backend (NestJS)
+# 1) Build Angular frontend (blocking)
+(
+  cd "$FRONTEND_DIR" || exit
+  echo "[FRONTEND_BUILD] Running 'ng build'..."
+  ng build 2>&1 | sed -e "s/^/[FRONTEND_BUILD] /"
+)
+
+# Your structure:
+# md-values-front-end/front-end/dist/medicalvalues-front-end[/browser]
+FRONTEND_BUILD_ROOT="${FRONTEND_DIR}/dist/medicalvalues-front-end"
+if [[ -d "${FRONTEND_BUILD_ROOT}/browser" ]]; then
+  FRONTEND_BUILD_DIR="${FRONTEND_BUILD_ROOT}/browser"
+else
+  FRONTEND_BUILD_DIR="${FRONTEND_BUILD_ROOT}"
+fi
+
+if [[ ! -d "$FRONTEND_BUILD_DIR" ]]; then
+  echo "✖ Built frontend directory not found: $FRONTEND_BUILD_DIR"
+  echo "  Check outputPath in angular.json and adjust run.sh if needed."
+  exit 1
+fi
+
+echo "[FRONTEND_BUILD] Build finished. Serving from: $FRONTEND_BUILD_DIR"
+echo ""
+
+# 2) Start Backend (NestJS)
 (
   cd "$BACKEND_DIR" || exit
   echo "[BACKEND] Starting NestJS..."
@@ -121,7 +144,7 @@ echo ""
 BACKEND_PID=$!
 echo "BACKEND_PID = $BACKEND_PID"
 
-# Start Backend Reverse Proxy (Nginx on 8080)
+# 3) Backend Reverse Proxy (Nginx on 8080)
 (
   cd "$BACKEND_PROXY_DIR" || exit
   echo "[BACKEND_PROXY] Preparing Nginx reverse proxy..."
@@ -135,7 +158,6 @@ echo "BACKEND_PID = $BACKEND_PID"
 BACKEND_PROXY_PID=$!
 echo "BACKEND_PROXY_PID = $BACKEND_PROXY_PID"
 
-# Live stream logs for backend reverse proxy
 (
   cd "$BACKEND_PROXY_DIR" || exit
   mkdir -p logs
@@ -145,17 +167,17 @@ echo "BACKEND_PROXY_PID = $BACKEND_PROXY_PID"
 BACKEND_PROXY_LOG_PID=$!
 echo "BACKEND_PROXY_LOG_PID = $BACKEND_PROXY_LOG_PID"
 
-# Start Frontend (Angular) on 127.0.0.1:4200
+# 4) Static frontend on 127.0.0.1:4200
 (
-  cd "$FRONTEND_DIR" || exit
-  echo "[FRONTEND] Starting Angular..."
-  ng serve --host 127.0.0.1 --port "$FRONTEND_PORT" --proxy-config proxy.conf.json \
-    2>&1 | sed -e "s/^/[FRONTEND] /"
+  cd "$FRONTEND_BUILD_DIR" || exit
+  echo "[FRONTEND] Serving built frontend on http://127.0.0.1:${FRONTEND_PORT} ..."
+  # Requires: npm install --save-dev http-server   (in FRONTEND_DIR)
+  npx http-server . -a 127.0.0.1 -p "$FRONTEND_PORT" 2>&1 | sed -e "s/^/[FRONTEND] /"
 ) &
 FRONTEND_PID=$!
 echo "FRONTEND_PID = $FRONTEND_PID"
 
-# Start Frontend Forward Proxy (Nginx on 3128)
+# 5) Frontend Forward Proxy (Nginx on 3128)
 (
   cd "$FRONTEND_PROXY_DIR" || exit
   echo "[FRONTEND_PROXY] Preparing Nginx forward proxy..."
@@ -169,7 +191,6 @@ echo "FRONTEND_PID = $FRONTEND_PID"
 FRONTEND_PROXY_PID=$!
 echo "FRONTEND_PROXY_PID = $FRONTEND_PROXY_PID"
 
-# Live stream logs for frontend forward proxy
 (
   cd "$FRONTEND_PROXY_DIR" || exit
   mkdir -p logs
@@ -179,13 +200,12 @@ echo "FRONTEND_PROXY_PID = $FRONTEND_PROXY_PID"
 FRONTEND_PROXY_LOG_PID=$!
 echo "FRONTEND_PROXY_LOG_PID = $FRONTEND_PROXY_LOG_PID"
 
-# Start Frontend Edge Reverse Proxy (HTTPS mdvalues.test → Angular 4200) on 443 via sudo
+# 6) Edge Reverse Proxy (HTTPS mdvalues.test → 4200) on 443 via sudo
 (
   cd "$FRONTEND_EDGE_DIR" || exit
   echo "[FRONTEND_EDGE] Preparing Nginx edge reverse proxy (mdvalues.test)..."
   mkdir -p logs
 
-  # Test mdvalues config as normal user (no root needed for -t)
   nginx -p "$(pwd)/" -c nginx-mdvalues.conf -t 2>&1 | sed -e "s/^/[FRONTEND_EDGE_TEST] /"
 
   echo "[FRONTEND_EDGE] Starting Nginx edge reverse proxy on 443 (requires sudo)..."
@@ -194,7 +214,6 @@ echo "FRONTEND_PROXY_LOG_PID = $FRONTEND_PROXY_LOG_PID"
 FRONTEND_EDGE_PID=$!
 echo "FRONTEND_EDGE_PID = $FRONTEND_EDGE_PID"
 
-# Live stream logs for frontend edge reverse proxy
 (
   cd "$FRONTEND_EDGE_DIR" || exit
   mkdir -p logs
@@ -212,13 +231,11 @@ echo "Frontend Proxy PID:        $FRONTEND_PROXY_PID"
 echo "Frontend Proxy Log PID:    $FRONTEND_PROXY_LOG_PID"
 echo "Frontend Edge PID:         $FRONTEND_EDGE_PID"
 echo "Frontend Edge Log PID:     $FRONTEND_EDGE_LOG_PID"
-echo "Frontend PID:              $FRONTEND_PID"
+echo "Frontend PID (static):     $FRONTEND_PID"
 echo ""
 
-# Trap CTRL-C
 trap ctrl_c INT
 
-# Wait for frontend, then open https://mdvalues.test
 wait_for_frontend &
 
 echo "Press CTRL+C to stop all servers."
