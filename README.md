@@ -1,4 +1,4 @@
-# vue-frontend-edge-proxy-forward-proxy-reverse-proxy-values challenge 
+# vue-frontend-edge-proxy-forward-proxy-reverse-proxy  
 
 ```
 .
