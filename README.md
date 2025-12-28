@@ -29,7 +29,7 @@
 │   │   ├── docker-compose.yml
 │   │   ├── Dockerfile
 │   │   └── start-frontend.sh
-│   ├── edge-proxy              // definable browser url (not localhost:4200)
+│   ├── edge-proxy              // proxy, definable browser url (not localhost:4200)
 │   │   ├── logs
 │   │   ├── nginx-mdvalues.conf
 │   │   └── ssl
